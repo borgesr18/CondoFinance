@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { Layout } from './components/Layout';
@@ -21,38 +22,41 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // TIMER DE SEGURANÇA: Se em 2.5 segundos o Supabase não responder,
-    // interrompemos o loading para mostrar a tela de login ou erro.
-    const safetyTimer = setTimeout(() => {
+    // TIMER DE SEGURANÇA MÁXIMA: 
+    // Se em 1.5 segundos nada acontecer, paramos o loading de qualquer jeito.
+    const timer = setTimeout(() => {
+      console.log("App: Timeout de segurança atingido.");
       setIsLoading(false);
-    }, 2500);
+    }, 1500);
 
-    const initAuth = async () => {
-      if (!isSupabaseConfigured || !supabase) {
-        setIsLoading(false);
-        return;
-      }
-
+    const checkAuth = async () => {
       try {
-        const { data: { session: initialSession } } = await supabase.auth.getSession();
+        if (!isSupabaseConfigured || !supabase) {
+          setIsLoading(false);
+          return;
+        }
+
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        
         setSession(initialSession);
         if (initialSession) {
-          await fetchProfile(initialSession.user.id);
+          await loadProfile(initialSession.user.id);
         }
       } catch (err) {
-        console.error("Erro na inicialização:", err);
+        console.error("App: Erro ao carregar sessão:", err);
       } finally {
         setIsLoading(false);
-        clearTimeout(safetyTimer);
+        clearTimeout(timer);
       }
     };
 
-    initAuth();
+    checkAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession);
       if (newSession) {
-        fetchProfile(newSession.user.id);
+        loadProfile(newSession.user.id);
       } else {
         setProfile(null);
       }
@@ -60,11 +64,11 @@ const App: React.FC = () => {
 
     return () => {
       subscription.unsubscribe();
-      clearTimeout(safetyTimer);
+      clearTimeout(timer);
     };
   }, []);
 
-  const fetchProfile = async (userId: string) => {
+  const loadProfile = async (userId: string) => {
     if (!supabase) return;
     try {
       const { data, error } = await supabase
@@ -72,8 +76,6 @@ const App: React.FC = () => {
         .select('*')
         .eq('id', userId)
         .maybeSingle();
-
-      if (error) throw error;
 
       if (data) {
         setProfile({
@@ -84,65 +86,82 @@ const App: React.FC = () => {
           avatarUrl: data.avatar_url
         });
       } else {
-        // Fallback: Perfil ainda não criado no banco
+        // Fallback imediato se o perfil não existir ainda
         setProfile({
           id: userId,
-          name: session?.user?.email?.split('@')[0] || 'Usuário',
+          name: session?.user?.email?.split('@')[0] || 'Novo Usuário',
           email: session?.user?.email || '',
           role: 'ADMIN_CONDOMINIO',
         });
       }
     } catch (err) {
-      console.error("Erro ao buscar perfil:", err);
+      console.error("App: Erro ao carregar perfil:", err);
       setProfile({ ...MOCK_USER, id: userId });
     }
   };
 
+  const handleLogout = async () => {
+    if (supabase) await supabase.auth.signOut();
+    setSession(null);
+    setProfile(null);
+  };
+
+  // Lógica de renderização direta para evitar hoisting
+  const renderView = () => {
+    const role = profile?.role || 'MORADOR';
+    
+    if (!canAccess(role, currentRoute)) {
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center">
+                <h2 className="text-xl font-bold text-slate-800">Acesso Restrito</h2>
+                <p className="text-slate-500">Você não tem permissão para ver este módulo.</p>
+                <button onClick={() => setCurrentRoute('dashboard')} className="mt-4 text-blue-600 font-medium">Voltar ao Início</button>
+            </div>
+        );
+    }
+
+    switch (currentRoute) {
+      case 'dashboard': return <Dashboard data={MOCK_SUMMARY} userRole={role} />;
+      case 'transactions': return <Transactions transactions={MOCK_TRANSACTIONS} />;
+      case 'billings': return <Billings billings={MOCK_BILLINGS} userRole={role} />;
+      case 'units': return <Units initialUnits={MOCK_UNITS} />;
+      case 'suppliers': return <Suppliers initialSuppliers={MOCK_SUPPLIERS} />;
+      case 'maintenance': return <Maintenance initialTasks={MOCK_MAINTENANCE} suppliers={MOCK_SUPPLIERS} />;
+      case 'reports': return <Reports />;
+      case 'settings': return <Settings condo={MOCK_CONDO} />;
+      default: return <Dashboard data={MOCK_SUMMARY} userRole={role} />;
+    }
+  };
+
+  // TELA DE CARREGAMENTO
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-900">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mx-auto"></div>
-          <p className="mt-4 text-slate-400 font-medium animate-pulse">Iniciando CondoFinance...</p>
-        </div>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white">
+        <div className="w-10 h-10 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
+        <p className="mt-4 font-bold tracking-widest text-sm opacity-50 uppercase">CondoFinance</p>
       </div>
     );
   }
 
+  // TELA DE LOGIN (Se não houver sessão)
   if (!session) {
     return <Auth onSuccess={() => {}} />;
   }
 
+  // APP PRINCIPAL
   return (
     <Layout 
         user={profile || MOCK_USER} 
         condo={MOCK_CONDO}
         activeRoute={currentRoute}
         onNavigate={(r) => setCurrentRoute(r as ModuleId)}
-        onLogout={() => supabase.auth.signOut()}
+        onLogout={handleLogout}
     >
-      <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-        {renderContent()}
+      <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+        {renderView()}
       </div>
     </Layout>
   );
-
-  function renderContent() {
-    if (!profile) return null;
-    if (!canAccess(profile.role, currentRoute)) return <div className="p-8 text-center">Acesso Negado</div>;
-
-    switch (currentRoute) {
-      case 'dashboard': return <Dashboard data={MOCK_SUMMARY} userRole={profile.role} />;
-      case 'transactions': return <Transactions transactions={MOCK_TRANSACTIONS} />;
-      case 'billings': return <Billings billings={MOCK_BILLINGS} userRole={profile.role} />;
-      case 'units': return <Units initialUnits={MOCK_UNITS} />;
-      case 'suppliers': return <Suppliers initialSuppliers={MOCK_SUPPLIERS} />;
-      case 'maintenance': return <Maintenance initialTasks={MOCK_MAINTENANCE} suppliers={MOCK_SUPPLIERS} />;
-      case 'reports': return <Reports />;
-      case 'settings': return <Settings condo={MOCK_CONDO} />;
-      default: return <div>Página não encontrada</div>;
-    }
-  }
 };
 
 export default App;
