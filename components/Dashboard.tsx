@@ -163,7 +163,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, userRole = 'ADMIN_CO
             <div className="text-2xl font-bold text-slate-900 mt-2">{data.delinquencyRate}%</div>
             <div className="flex items-center mt-1 text-xs">
                 <span className="text-amber-600 font-medium">3 unidades</span>
-                <span className="text-slate-400 ml-1">em atraso > 30 dias</span>
+                <span className="text-slate-400 ml-1">em atraso &gt; 30 dias</span>
             </div>
           </CardContent>
         </Card>
