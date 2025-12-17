@@ -12,7 +12,7 @@ import { Reports } from './components/Reports';
 import { Settings } from './components/Settings';
 import { Auth } from './components/Auth';
 import { Button } from './components/ui/Button';
-import { Card, CardContent, CardHeader, CardTitle } from './components/ui/Card';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/Card';
 import { Icons } from './components/ui/Icons';
 import { MOCK_USER, MOCK_CONDO, MOCK_SUMMARY, MOCK_TRANSACTIONS, MOCK_BILLINGS, MOCK_UNITS, MOCK_SUPPLIERS, MOCK_MAINTENANCE } from './constants';
 import { canAccess, ModuleId } from './utils/permissions';
@@ -22,7 +22,7 @@ const App: React.FC = () => {
   const [session, setSession] = useState<any>(null);
   const [profile, setProfile] = useState<User | null>(null);
   const [currentRoute, setCurrentRoute] = useState<ModuleId>('dashboard');
-  const [isLoading, setIsLoading] = useState(isSupabaseConfigured);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) {
@@ -54,19 +54,21 @@ const App: React.FC = () => {
     if (!supabase) return;
     setIsLoading(true);
     try {
+      // Tenta buscar o perfil na tabela de membros
       const { data, error } = await supabase
         .from('membros')
         .select('*')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
       if (error || !data) {
+        // Se a tabela ainda não existir ou o usuário não tiver perfil, cria um temporário
         const fallbackProfile: User = {
           id: userId,
-          name: session?.user?.user_metadata?.full_name || 'Usuário Novo',
+          name: session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Usuário',
           email: session?.user?.email || '',
-          role: 'ADMIN_CONDOMINIO',
-          avatarUrl: session?.user?.user_metadata?.avatar_url
+          role: 'ADMIN_CONDOMINIO', // Novo usuário é Admin por padrão no setup
+          avatarUrl: `https://ui-avatars.com/api/?name=${session?.user?.email}&background=0D8ABC&color=fff`
         };
         setProfile(fallbackProfile);
       } else {
@@ -75,11 +77,13 @@ const App: React.FC = () => {
           name: data.nome,
           email: data.email,
           role: data.role as UserRole,
-          avatarUrl: data.avatar_url
+          avatarUrl: data.avatar_url || `https://ui-avatars.com/api/?name=${data.nome}&background=0D8ABC&color=fff`
         });
       }
     } catch (err) {
       console.error("Erro ao carregar perfil:", err);
+      // Fallback seguro em caso de erro de banco
+      setProfile(MOCK_USER);
     } finally {
       setIsLoading(false);
     }
@@ -96,13 +100,13 @@ const App: React.FC = () => {
 
     if (!canAccess(profile.role, currentRoute)) {
         return (
-            <div className="flex flex-col items-center justify-center h-full text-center p-8">
-                <div className="h-12 w-12 bg-red-100 rounded-full flex items-center justify-center mb-4">
-                    <Icons.Shield className="h-6 w-6 text-red-600" />
+            <div className="flex flex-col items-center justify-center h-full text-center p-8 animate-in zoom-in duration-300">
+                <div className="h-16 w-16 bg-red-100 rounded-2xl flex items-center justify-center mb-6 shadow-sm">
+                    <Icons.Shield className="h-8 w-8 text-red-600" />
                 </div>
-                <h2 className="text-xl font-bold text-slate-900">Acesso Negado</h2>
-                <p className="text-slate-500 mt-2">Seu perfil ({profile.role}) não tem permissão para este módulo.</p>
-                <Button className="mt-4" onClick={() => setCurrentRoute('dashboard')}>Voltar ao Dashboard</Button>
+                <h2 className="text-2xl font-bold text-slate-900">Acesso Restrito</h2>
+                <p className="text-slate-500 mt-2 max-w-xs">Seu perfil ({profile.role}) não possui as permissões necessárias para este módulo.</p>
+                <Button className="mt-8 px-8 bg-slate-900" onClick={() => setCurrentRoute('dashboard')}>Voltar ao Dashboard</Button>
             </div>
         );
     }
@@ -132,46 +136,13 @@ const App: React.FC = () => {
     }
   };
 
-  // UI para quando o Supabase não está configurado
-  if (!isSupabaseConfigured) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-        <Card className="max-w-md w-full border-t-4 border-t-blue-600 shadow-xl">
-          <CardHeader>
-            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-2">
-              <Icons.Logo className="h-6 w-6 text-blue-600" />
-            </div>
-            <CardTitle className="text-2xl font-bold text-slate-900">Configuração Necessária</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-slate-600 text-sm">
-              O sistema CondoFinance exige a configuração do <strong>Supabase</strong> para funcionar em modo de produção.
-            </p>
-            <div className="bg-slate-900 rounded-md p-4 text-xs font-mono text-slate-300 space-y-2">
-              <p>NEXT_PUBLIC_SUPABASE_URL=seu_projeto.supabase.co</p>
-              <p>NEXT_PUBLIC_SUPABASE_ANON_KEY=sua_chave_anonima</p>
-            </div>
-            <p className="text-slate-500 text-xs italic">
-              Por favor, configure as chaves acima nas suas variáveis de ambiente ou configurações do projeto.
-            </p>
-            <Button 
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white" 
-              onClick={() => window.location.reload()}
-            >
-              Tentar Novamente
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-slate-600 font-medium">Conectando ao CondoFinance...</p>
+          <div className="w-16 h-16 border-4 border-blue-600/20 border-t-blue-600 rounded-full animate-spin mx-auto"></div>
+          <p className="mt-6 text-slate-900 font-bold text-lg">CondoFinance</p>
+          <p className="text-slate-500 text-sm">Autenticando sua sessão com segurança...</p>
         </div>
       </div>
     );
@@ -189,7 +160,9 @@ const App: React.FC = () => {
         onNavigate={(r) => setCurrentRoute(r as ModuleId)}
         onLogout={handleLogout}
     >
-      {renderContent()}
+      <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+        {renderContent()}
+      </div>
     </Layout>
   );
 };

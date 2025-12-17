@@ -1,20 +1,8 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Access environment variables using the standard process.env
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabaseUrl = 'https://ccpoizyftzvbxdwdpkow.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNjcG9penlmdHp2Ynhkd2Rwa293Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU5ODg2OTksImV4cCI6MjA4MTU2NDY5OX0.8BkxvZvlRWWsetCPatv-YJw7niUPT_4JBbdbL4-N8yU';
 
-// Export a flag to check if Supabase is properly configured
-export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
-
-// Only initialize the client if credentials are provided to avoid "supabaseUrl is required" error
-export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : null;
-
-if (!isSupabaseConfigured) {
-  console.warn(
-    "Supabase credentials missing. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your environment variables."
-  );
-}
+export const isSupabaseConfigured = true;
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
