@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { Layout } from './components/Layout';
@@ -12,7 +11,6 @@ import { Reports } from './components/Reports';
 import { Settings } from './components/Settings';
 import { Auth } from './components/Auth';
 import { Button } from './components/ui/Button';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/Card';
 import { Icons } from './components/ui/Icons';
 import { MOCK_USER, MOCK_CONDO, MOCK_SUMMARY, MOCK_TRANSACTIONS, MOCK_BILLINGS, MOCK_UNITS, MOCK_SUPPLIERS, MOCK_MAINTENANCE } from './constants';
 import { canAccess, ModuleId } from './utils/permissions';
@@ -40,8 +38,9 @@ const App: React.FC = () => {
     // 2. Ouvir mudanças de auth
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      if (session) fetchProfile(session.user.id);
-      else {
+      if (session) {
+        fetchProfile(session.user.id);
+      } else {
         setProfile(null);
         setIsLoading(false);
       }
@@ -54,36 +53,35 @@ const App: React.FC = () => {
     if (!supabase) return;
     setIsLoading(true);
     try {
-      // Tenta buscar o perfil na tabela de membros
       const { data, error } = await supabase
-        .from('membros')
+        .from('perfis')
         .select('*')
         .eq('user_id', userId)
         .maybeSingle();
 
-      if (error || !data) {
-        // Se a tabela ainda não existir ou o usuário não tiver perfil, cria um temporário
-        const fallbackProfile: User = {
-          id: userId,
-          name: session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Usuário',
-          email: session?.user?.email || '',
-          role: 'ADMIN_CONDOMINIO', // Novo usuário é Admin por padrão no setup
-          avatarUrl: `https://ui-avatars.com/api/?name=${session?.user?.email}&background=0D8ABC&color=fff`
-        };
-        setProfile(fallbackProfile);
-      } else {
+      if (error) throw error;
+
+      if (data) {
         setProfile({
           id: data.id,
           name: data.nome,
           email: data.email,
           role: data.role as UserRole,
-          avatarUrl: data.avatar_url || `https://ui-avatars.com/api/?name=${data.nome}&background=0D8ABC&color=fff`
+          avatarUrl: data.avatar_url
+        });
+      } else {
+        // Fallback para novo usuário se o trigger demorar
+        setProfile({
+          id: userId,
+          name: session?.user?.email?.split('@')[0] || 'Novo Usuário',
+          email: session?.user?.email || '',
+          role: 'ADMIN_CONDOMINIO',
+          avatarUrl: `https://ui-avatars.com/api/?name=${session?.user?.email}&background=0D8ABC&color=fff`
         });
       }
     } catch (err) {
       console.error("Erro ao carregar perfil:", err);
-      // Fallback seguro em caso de erro de banco
-      setProfile(MOCK_USER);
+      setProfile(MOCK_USER); // Fallback seguro
     } finally {
       setIsLoading(false);
     }
@@ -141,8 +139,8 @@ const App: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-blue-600/20 border-t-blue-600 rounded-full animate-spin mx-auto"></div>
-          <p className="mt-6 text-slate-900 font-bold text-lg">CondoFinance</p>
-          <p className="text-slate-500 text-sm">Autenticando sua sessão com segurança...</p>
+          <p className="mt-6 text-slate-900 font-bold text-lg font-sans">CondoFinance</p>
+          <p className="text-slate-500 text-sm">Carregando seus dados...</p>
         </div>
       </div>
     );
