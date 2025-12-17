@@ -10,8 +10,6 @@ import { Maintenance } from './components/Maintenance';
 import { Reports } from './components/Reports';
 import { Settings } from './components/Settings';
 import { Auth } from './components/Auth';
-import { Button } from './components/ui/Button';
-import { Icons } from './components/ui/Icons';
 import { MOCK_USER, MOCK_CONDO, MOCK_SUMMARY, MOCK_TRANSACTIONS, MOCK_BILLINGS, MOCK_UNITS, MOCK_SUPPLIERS, MOCK_MAINTENANCE } from './constants';
 import { canAccess, ModuleId } from './utils/permissions';
 import { User, UserRole } from './types';
@@ -23,40 +21,56 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) {
+    // TIMER DE SEGURANÇA: Se em 2.5 segundos o Supabase não responder,
+    // interrompemos o loading para mostrar a tela de login ou erro.
+    const safetyTimer = setTimeout(() => {
       setIsLoading(false);
-      return;
-    }
+    }, 2500);
 
-    // 1. Checar sessão inicial
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session) fetchProfile(session.user.id);
-      else setIsLoading(false);
-    });
+    const initAuth = async () => {
+      if (!isSupabaseConfigured || !supabase) {
+        setIsLoading(false);
+        return;
+      }
 
-    // 2. Ouvir mudanças de auth
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (session) {
-        fetchProfile(session.user.id);
+      try {
+        const { data: { session: initialSession } } = await supabase.auth.getSession();
+        setSession(initialSession);
+        if (initialSession) {
+          await fetchProfile(initialSession.user.id);
+        }
+      } catch (err) {
+        console.error("Erro na inicialização:", err);
+      } finally {
+        setIsLoading(false);
+        clearTimeout(safetyTimer);
+      }
+    };
+
+    initAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+      if (newSession) {
+        fetchProfile(newSession.user.id);
       } else {
         setProfile(null);
-        setIsLoading(false);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(safetyTimer);
+    };
   }, []);
 
   const fetchProfile = async (userId: string) => {
     if (!supabase) return;
-    setIsLoading(true);
     try {
       const { data, error } = await supabase
         .from('perfis')
         .select('*')
-        .eq('user_id', userId)
+        .eq('id', userId)
         .maybeSingle();
 
       if (error) throw error;
@@ -64,83 +78,32 @@ const App: React.FC = () => {
       if (data) {
         setProfile({
           id: data.id,
-          name: data.nome,
+          name: data.nome || 'Usuário',
           email: data.email,
-          role: data.role as UserRole,
+          role: (data.role as UserRole) || 'MORADOR',
           avatarUrl: data.avatar_url
         });
       } else {
-        // Fallback para novo usuário se o trigger demorar
+        // Fallback: Perfil ainda não criado no banco
         setProfile({
           id: userId,
-          name: session?.user?.email?.split('@')[0] || 'Novo Usuário',
+          name: session?.user?.email?.split('@')[0] || 'Usuário',
           email: session?.user?.email || '',
           role: 'ADMIN_CONDOMINIO',
-          avatarUrl: `https://ui-avatars.com/api/?name=${session?.user?.email}&background=0D8ABC&color=fff`
         });
       }
     } catch (err) {
-      console.error("Erro ao carregar perfil:", err);
-      setProfile(MOCK_USER); // Fallback seguro
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    if (supabase) {
-      await supabase.auth.signOut();
-    }
-  };
-
-  const renderContent = () => {
-    if (!profile) return null;
-
-    if (!canAccess(profile.role, currentRoute)) {
-        return (
-            <div className="flex flex-col items-center justify-center h-full text-center p-8 animate-in zoom-in duration-300">
-                <div className="h-16 w-16 bg-red-100 rounded-2xl flex items-center justify-center mb-6 shadow-sm">
-                    <Icons.Shield className="h-8 w-8 text-red-600" />
-                </div>
-                <h2 className="text-2xl font-bold text-slate-900">Acesso Restrito</h2>
-                <p className="text-slate-500 mt-2 max-w-xs">Seu perfil ({profile.role}) não possui as permissões necessárias para este módulo.</p>
-                <Button className="mt-8 px-8 bg-slate-900" onClick={() => setCurrentRoute('dashboard')}>Voltar ao Dashboard</Button>
-            </div>
-        );
-    }
-
-    switch (currentRoute) {
-      case 'dashboard':
-        return <Dashboard data={MOCK_SUMMARY} userRole={profile.role} />;
-      case 'transactions':
-        return <Transactions transactions={MOCK_TRANSACTIONS} />;
-      case 'billings':
-        const displayedBillings = profile.role === 'MORADOR' 
-            ? MOCK_BILLINGS.filter(b => b.unitId === 'unit-0') 
-            : MOCK_BILLINGS;
-        return <Billings billings={displayedBillings} userRole={profile.role} />;
-      case 'units':
-        return <Units initialUnits={MOCK_UNITS} />;
-      case 'suppliers':
-        return <Suppliers initialSuppliers={MOCK_SUPPLIERS} />;
-      case 'maintenance':
-        return <Maintenance initialTasks={MOCK_MAINTENANCE} suppliers={MOCK_SUPPLIERS} />;
-      case 'reports':
-        return <Reports />;
-      case 'settings':
-        return <Settings condo={MOCK_CONDO} />;
-      default:
-        return <div>Página não encontrada</div>;
+      console.error("Erro ao buscar perfil:", err);
+      setProfile({ ...MOCK_USER, id: userId });
     }
   };
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen flex items-center justify-center bg-slate-900">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-blue-600/20 border-t-blue-600 rounded-full animate-spin mx-auto"></div>
-          <p className="mt-6 text-slate-900 font-bold text-lg font-sans">CondoFinance</p>
-          <p className="text-slate-500 text-sm">Carregando seus dados...</p>
+          <div className="w-12 h-12 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mx-auto"></div>
+          <p className="mt-4 text-slate-400 font-medium animate-pulse">Iniciando CondoFinance...</p>
         </div>
       </div>
     );
@@ -156,13 +119,30 @@ const App: React.FC = () => {
         condo={MOCK_CONDO}
         activeRoute={currentRoute}
         onNavigate={(r) => setCurrentRoute(r as ModuleId)}
-        onLogout={handleLogout}
+        onLogout={() => supabase.auth.signOut()}
     >
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
         {renderContent()}
       </div>
     </Layout>
   );
+
+  function renderContent() {
+    if (!profile) return null;
+    if (!canAccess(profile.role, currentRoute)) return <div className="p-8 text-center">Acesso Negado</div>;
+
+    switch (currentRoute) {
+      case 'dashboard': return <Dashboard data={MOCK_SUMMARY} userRole={profile.role} />;
+      case 'transactions': return <Transactions transactions={MOCK_TRANSACTIONS} />;
+      case 'billings': return <Billings billings={MOCK_BILLINGS} userRole={profile.role} />;
+      case 'units': return <Units initialUnits={MOCK_UNITS} />;
+      case 'suppliers': return <Suppliers initialSuppliers={MOCK_SUPPLIERS} />;
+      case 'maintenance': return <Maintenance initialTasks={MOCK_MAINTENANCE} suppliers={MOCK_SUPPLIERS} />;
+      case 'reports': return <Reports />;
+      case 'settings': return <Settings condo={MOCK_CONDO} />;
+      default: return <div>Página não encontrada</div>;
+    }
+  }
 };
 
 export default App;
